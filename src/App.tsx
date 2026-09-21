@@ -16,10 +16,12 @@ import {
   reverseTransaction,
   exportStatement,
 } from "./lib/api";
+import { TwoFactorSettings } from "./components/TwoFactorSettings";
 import Login from "./Login";
 import { connectToAccount } from "./lib/websocket";
 import { ToastContainer } from "./components/Toast";
 import { AnalyticsView } from "./components/AnalyticsView";
+import { BudgetsPanel } from "./components/BudgetsPanel";
 
 function Logomark({ className }: { className?: string }) {
   return (
@@ -599,9 +601,11 @@ function Dashboard({ userId, userName, onLogout }: { userId: string; userName: s
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [recurringRefreshKey, setRecurringRefreshKey] = useState(0);
+  const [budgetRefreshKey, setBudgetRefreshKey] = useState(0);
   const [toasts, setToasts] = useState<import("./components/Toast").Toast[]>([]);
   const [reversingId, setReversingId] = useState<string | null>(null);
   const [view, setView] = useState<"activity" | "analytics">("activity");
+  const [showTwoFactorModal, setShowTwoFactorModal] = useState(false);
 
   function pushToast(message: string, type: "info" | "flagged" = "info") {
     const id = crypto.randomUUID();
@@ -623,6 +627,7 @@ function Dashboard({ userId, userName, onLogout }: { userId: string; userName: s
     if (!selectedId) return;
     const txns = await getTransactions(selectedId);
     setTransactions(txns);
+    setBudgetRefreshKey((k) => k + 1);
   }
 
   useEffect(() => {
@@ -647,7 +652,11 @@ function Dashboard({ userId, userName, onLogout }: { userId: string; userName: s
         }
       },
       (notification) => {
-        pushToast(notification.message, "info");
+        pushToast(
+          notification.message,
+          notification.type === "BUDGET_EXCEEDED" ? "flagged" : "info"
+        );
+        setBudgetRefreshKey((k) => k + 1);
       }
     );
     return () => disconnect();
@@ -688,14 +697,20 @@ function Dashboard({ userId, userName, onLogout }: { userId: string; userName: s
             <span className="font-mono text-sm tracking-wide text-ink">FINORA</span>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-ink/60">{userName}</span>
-            <button
-              onClick={onLogout}
-              className="text-xs text-ink/40 hover:text-rust transition-colors border border-ink/10 rounded-md px-3 py-1.5"
-            >
-              Sign out
-            </button>
-          </div>
+  <span className="text-sm text-ink/60">{userName}</span>
+  <button
+    onClick={() => setShowTwoFactorModal(true)}
+    className="text-xs text-ink/40 hover:text-ink transition-colors border border-ink/10 rounded-md px-3 py-1.5"
+  >
+    Security
+  </button>
+  <button
+    onClick={onLogout}
+    className="text-xs text-ink/40 hover:text-rust transition-colors border border-ink/10 rounded-md px-3 py-1.5"
+  >
+    Sign out
+  </button>
+</div>
         </div>
       </header>
 
@@ -790,6 +805,10 @@ function Dashboard({ userId, userName, onLogout }: { userId: string; userName: s
               <AnalyticsView accountId={selectedId} />
             ) : (
               <>
+                {selectedId && (
+                  <BudgetsPanel accountId={selectedId} refreshKey={budgetRefreshKey} />
+                )}
+
                 {selectedId && (
                   <RecurringTransfersPanel
                     accountId={selectedId}
@@ -887,6 +906,9 @@ function Dashboard({ userId, userName, onLogout }: { userId: string; userName: s
       )}
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      {showTwoFactorModal && (
+  <TwoFactorSettings onClose={() => setShowTwoFactorModal(false)} />
+)}
 
       {showRecurringModal && selectedId && selectedAccount && (
         <NewRecurringTransferModal

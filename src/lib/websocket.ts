@@ -13,6 +13,7 @@ export interface NotificationMessage {
   accountId: string;
   message: string;
   transactionId?: string;
+  type?: string;
 }
 
 export function connectToAccount(

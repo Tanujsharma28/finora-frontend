@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { login, register, setSession } from "./lib/api";
+import { login, register, setSession, verifyTwoFactorLogin } from "./lib/api";
 
 interface LoginProps {
   onAuthenticated: () => void;
@@ -91,6 +91,82 @@ function BrandPanel() {
   );
 }
 
+function TwoFactorPrompt({
+  pendingToken,
+  onVerified,
+  onCancel,
+}: {
+  pendingToken: string;
+  onVerified: () => void;
+  onCancel: () => void;
+}) {
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const auth = await verifyTwoFactorLogin(pendingToken, code.trim());
+      setSession(auth);
+      onVerified();
+    } catch {
+      setError("Invalid or expired code. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="w-full max-w-[360px] animate-fade-up">
+      <h2 className="text-[28px] font-semibold text-ink mb-1.5 tracking-tight">Two-factor verification</h2>
+      <p className="text-ink/45 text-sm mb-9">
+        Enter the 6-digit code from your authenticator app.
+      </p>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="text-xs font-medium text-ink/60 block mb-1.5">Authentication code</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+            required
+            autoFocus
+            placeholder="000000"
+            className="w-full bg-white border border-ink/12 rounded-md px-3.5 py-2.5 text-lg font-mono tracking-[0.3em] text-center text-ink placeholder:text-ink/30 shadow-sm focus:outline-none focus:ring-2 focus:ring-ledger/25 focus:border-ledger transition-all"
+          />
+        </div>
+
+        {error && (
+          <p className="text-rust text-xs bg-rust/5 border border-rust/15 rounded-md px-3 py-2">{error}</p>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading || code.length !== 6}
+          className="w-full bg-ledger text-paper font-medium rounded-md px-3 py-2.5 text-sm shadow-sm disabled:opacity-50 hover:opacity-90 active:scale-[0.99] transition-all mt-2"
+        >
+          {loading ? "Verifying..." : "Verify"}
+        </button>
+
+        <button
+          type="button"
+          onClick={onCancel}
+          className="w-full text-xs text-ink/45 hover:text-ink/70 transition-colors mt-2"
+        >
+          Back to sign in
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function Login({ onAuthenticated }: LoginProps) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [name, setName] = useState("");
@@ -98,6 +174,7 @@ function Login({ onAuthenticated }: LoginProps) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -107,6 +184,12 @@ function Login({ onAuthenticated }: LoginProps) {
       const auth = mode === "login"
         ? await login(email, password)
         : await register(name, email, password);
+
+      if (auth.requiresTwoFactor && auth.pendingToken) {
+        setPendingToken(auth.pendingToken);
+        return;
+      }
+
       setSession(auth);
       onAuthenticated();
     } catch {
@@ -128,94 +211,102 @@ function Login({ onAuthenticated }: LoginProps) {
         </div>
 
         <div className="flex-1 flex items-center justify-center px-6 pb-16">
-          <div className="w-full max-w-[360px] animate-fade-up" style={{ animationDelay: "0.15s" }}>
-            <div className="flex items-center gap-2 mb-10 lg:hidden justify-center">
-              <Logomark className="w-4 h-4 text-ledger" />
-              <span className="font-mono text-sm tracking-wide text-ink">FINORA</span>
-            </div>
+          {pendingToken ? (
+            <TwoFactorPrompt
+              pendingToken={pendingToken}
+              onVerified={onAuthenticated}
+              onCancel={() => setPendingToken(null)}
+            />
+          ) : (
+            <div className="w-full max-w-[360px] animate-fade-up" style={{ animationDelay: "0.15s" }}>
+              <div className="flex items-center gap-2 mb-10 lg:hidden justify-center">
+                <Logomark className="w-4 h-4 text-ledger" />
+                <span className="font-mono text-sm tracking-wide text-ink">FINORA</span>
+              </div>
 
-            <h2 className="text-[28px] font-semibold text-ink mb-1.5 tracking-tight">
-              {mode === "login" ? "Welcome back" : "Create your account"}
-            </h2>
-            <p className="text-ink/45 text-sm mb-9">
-              {mode === "login" ? "Sign in to continue to your dashboard." : "Takes less than a minute."}
-            </p>
+              <h2 className="text-[28px] font-semibold text-ink mb-1.5 tracking-tight">
+                {mode === "login" ? "Welcome back" : "Create your account"}
+              </h2>
+              <p className="text-ink/45 text-sm mb-9">
+                {mode === "login" ? "Sign in to continue to your dashboard." : "Takes less than a minute."}
+              </p>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {mode === "register" && (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {mode === "register" && (
+                  <div>
+                    <label className="text-xs font-medium text-ink/60 block mb-1.5">Full name</label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                      placeholder="Tanuj Sharma"
+                      className="w-full bg-white border border-ink/12 rounded-md px-3.5 py-2.5 text-sm text-ink placeholder:text-ink/30 shadow-sm focus:outline-none focus:ring-2 focus:ring-ledger/25 focus:border-ledger transition-all"
+                    />
+                  </div>
+                )}
                 <div>
-                  <label className="text-xs font-medium text-ink/60 block mb-1.5">Full name</label>
+                  <label className="text-xs font-medium text-ink/60 block mb-1.5">Email</label>
                   <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     required
-                    placeholder="Tanuj Sharma"
+                    placeholder="you@example.com"
                     className="w-full bg-white border border-ink/12 rounded-md px-3.5 py-2.5 text-sm text-ink placeholder:text-ink/30 shadow-sm focus:outline-none focus:ring-2 focus:ring-ledger/25 focus:border-ledger transition-all"
                   />
                 </div>
-              )}
-              <div>
-                <label className="text-xs font-medium text-ink/60 block mb-1.5">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  placeholder="you@example.com"
-                  className="w-full bg-white border border-ink/12 rounded-md px-3.5 py-2.5 text-sm text-ink placeholder:text-ink/30 shadow-sm focus:outline-none focus:ring-2 focus:ring-ledger/25 focus:border-ledger transition-all"
-                />
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-medium text-ink/60">Password</label>
-                  {mode === "login" && (
-                    <button type="button" className="text-xs text-ink/35 hover:text-ink/60 transition-colors">
-                      Forgot password?
-                    </button>
-                  )}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-medium text-ink/60">Password</label>
+                    {mode === "login" && (
+                      <button type="button" className="text-xs text-ink/35 hover:text-ink/60 transition-colors">
+                        Forgot password?
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    placeholder="••••••••"
+                    className="w-full bg-white border border-ink/12 rounded-md px-3.5 py-2.5 text-sm text-ink placeholder:text-ink/30 shadow-sm focus:outline-none focus:ring-2 focus:ring-ledger/25 focus:border-ledger transition-all"
+                  />
                 </div>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={8}
-                  placeholder="••••••••"
-                  className="w-full bg-white border border-ink/12 rounded-md px-3.5 py-2.5 text-sm text-ink placeholder:text-ink/30 shadow-sm focus:outline-none focus:ring-2 focus:ring-ledger/25 focus:border-ledger transition-all"
-                />
-              </div>
 
-              {mode === "login" && (
-                <label className="flex items-center gap-2 text-xs text-ink/50 cursor-pointer select-none">
-                  <input type="checkbox" className="rounded border-ink/20 accent-ledger w-3.5 h-3.5" />
-                  Keep me signed in
-                </label>
-              )}
+                {mode === "login" && (
+                  <label className="flex items-center gap-2 text-xs text-ink/50 cursor-pointer select-none">
+                    <input type="checkbox" className="rounded border-ink/20 accent-ledger w-3.5 h-3.5" />
+                    Keep me signed in
+                  </label>
+                )}
 
-              {error && (
-                <p className="text-rust text-xs bg-rust/5 border border-rust/15 rounded-md px-3 py-2">{error}</p>
-              )}
+                {error && (
+                  <p className="text-rust text-xs bg-rust/5 border border-rust/15 rounded-md px-3 py-2">{error}</p>
+                )}
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-ledger text-paper font-medium rounded-md px-3 py-2.5 text-sm shadow-sm disabled:opacity-50 hover:opacity-90 active:scale-[0.99] transition-all mt-2"
-              >
-                {loading ? "Please wait..." : mode === "login" ? "Sign in" : "Create account"}
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-ledger text-paper font-medium rounded-md px-3 py-2.5 text-sm shadow-sm disabled:opacity-50 hover:opacity-90 active:scale-[0.99] transition-all mt-2"
+                >
+                  {loading ? "Please wait..." : mode === "login" ? "Sign in" : "Create account"}
+                </button>
+              </form>
 
-            <p className="text-center text-xs text-ink/45 mt-8">
-              {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
-              <button
-                onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}
-                className="text-ledger font-medium hover:underline"
-              >
-                {mode === "login" ? "Register" : "Sign in"}
-              </button>
-            </p>
-          </div>
+              <p className="text-center text-xs text-ink/45 mt-8">
+                {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
+                <button
+                  onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}
+                  className="text-ledger font-medium hover:underline"
+                >
+                  {mode === "login" ? "Register" : "Sign in"}
+                </button>
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

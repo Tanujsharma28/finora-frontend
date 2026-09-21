@@ -18,14 +18,16 @@ export interface Transaction {
   status: "PENDING" | "COMPLETED" | "FLAGGED" | "REVERSED";
   createdAt: string;
 }
-
 export interface AuthResponse {
   token: string;
   refreshToken: string;
   userId: string;
   name: string;
   email: string;
+  requiresTwoFactor: boolean;
+  pendingToken: string | null;
 }
+
 
 export interface TokenResponse {
   token: string;
@@ -57,6 +59,13 @@ export function clearSession() {
   localStorage.removeItem("finora_refresh_token");
   localStorage.removeItem("finora_user_id");
   localStorage.removeItem("finora_user_name");
+}
+export interface TwoFactorStatusResponse {
+  enabled: boolean;
+}
+
+export function getTwoFactorStatus() {
+  return request<TwoFactorStatusResponse>("/auth/2fa/status");
 }
 
 export function getSession() {
@@ -120,6 +129,10 @@ async function request<T>(path: string, options?: RequestInit, isRetry = false):
   if (!res.ok) {
     throw new Error(`Request failed: ${res.status}`);
   }
+
+  if (res.status === 204) {
+    return undefined as T;
+  }
   return res.json();
 }
 
@@ -159,6 +172,31 @@ export async function logout() {
 
 export function getAccountsByUser(userId: string) {
   return request<Account[]>(`/accounts?userId=${userId}`);
+}
+export interface Budget {
+  id: string;
+  accountId: string;
+  category: string;
+  monthlyLimit: number;
+  spent: number;
+  percentUsed: number;
+}
+
+export function getBudgets(accountId: string) {
+  return request<Budget[]>(`/accounts/${accountId}/budgets`);
+}
+
+export function setBudget(accountId: string, category: string, monthlyLimit: number) {
+  return request<Budget>(`/accounts/${accountId}/budgets`, {
+    method: "POST",
+    body: JSON.stringify({ category, monthlyLimit }),
+  });
+}
+
+export function deleteBudget(accountId: string, budgetId: string) {
+  return request<void>(`/accounts/${accountId}/budgets/${budgetId}`, {
+    method: "DELETE",
+  });
 }
 
 export function createAccount(userId: string, accountType: Account["accountType"]) {
@@ -266,7 +304,37 @@ export async function exportStatement(accountId: string) {
   a.click();
   window.URL.revokeObjectURL(url);
 }
+export function verifyTwoFactorLogin(pendingToken: string, code: string) {
+  return request<AuthResponse>("/auth/2fa/login-verify", {
+    method: "POST",
+    body: JSON.stringify({ pendingToken, code }),
+  });
+}
 
+export interface TwoFactorSetupResponse {
+  qrCodeDataUri: string;
+  secret: string;
+}
+
+export function setupTwoFactor() {
+  return request<TwoFactorSetupResponse>("/auth/2fa/setup", {
+    method: "POST",
+  });
+}
+
+export function enableTwoFactor(code: string) {
+  return request<void>("/auth/2fa/enable", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export function disableTwoFactor(password: string) {
+  return request<void>("/auth/2fa/disable", {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
 export function createTransaction(payload: {
   accountId: string;
   amount: number;

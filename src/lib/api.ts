@@ -21,30 +21,42 @@ export interface Transaction {
 
 export interface AuthResponse {
   token: string;
+  refreshToken: string;
   userId: string;
   name: string;
   email: string;
+}
+
+export interface TokenResponse {
+  token: string;
+  refreshToken: string;
 }
 
 function getToken(): string | null {
   return localStorage.getItem("finora_token");
 }
 
+function getRefreshToken(): string | null {
+  return localStorage.getItem("finora_refresh_token");
+}
+
 export function setSession(auth: AuthResponse) {
   localStorage.setItem("finora_token", auth.token);
+  localStorage.setItem("finora_refresh_token", auth.refreshToken);
   localStorage.setItem("finora_user_id", auth.userId);
   localStorage.setItem("finora_user_name", auth.name);
 }
 
+function setTokens(tokens: TokenResponse) {
+  localStorage.setItem("finora_token", tokens.token);
+  localStorage.setItem("finora_refresh_token", tokens.refreshToken);
+}
+
 export function clearSession() {
   localStorage.removeItem("finora_token");
+  localStorage.removeItem("finora_refresh_token");
   localStorage.removeItem("finora_user_id");
   localStorage.removeItem("finora_user_name");
-}
-export function reverseTransaction(id: string) {
-  return request<Transaction>(`/transactions/${id}/reverse`, {
-    method: "POST",
-  });
 }
 
 export function getSession() {
@@ -55,7 +67,37 @@ export function getSession() {
   return { token, userId, name };
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+// Ensures concurrent 401s only trigger a single /refresh call
+let refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefresh(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) return false;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (!res.ok) return false;
+      const tokens: TokenResponse = await res.json();
+      setTokens(tokens);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+async function request<T>(path: string, options?: RequestInit, isRetry = false): Promise<T> {
   const token = getToken();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
@@ -64,6 +106,17 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     },
     ...options,
   });
+
+  if ((res.status === 401 || res.status === 403) && !isRetry && getRefreshToken()) {
+    const refreshed = await tryRefresh();
+    if (refreshed) {
+      return request<T>(path, options, true);
+    }
+    clearSession();
+    window.location.reload();
+    throw new Error("Session expired");
+  }
+
   if (!res.ok) {
     throw new Error(`Request failed: ${res.status}`);
   }
@@ -84,6 +137,26 @@ export function login(email: string, password: string) {
   });
 }
 
+export async function logout() {
+  const token = getToken();
+  const refreshToken = getRefreshToken();
+  if (token) {
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ refreshToken }),
+      });
+    } catch {
+      // best-effort — clear local session regardless
+    }
+  }
+  clearSession();
+}
+
 export function getAccountsByUser(userId: string) {
   return request<Account[]>(`/accounts?userId=${userId}`);
 }
@@ -97,6 +170,12 @@ export function createAccount(userId: string, accountType: Account["accountType"
 
 export function getTransactions(accountId: string) {
   return request<Transaction[]>(`/transactions?accountId=${accountId}`);
+}
+
+export function reverseTransaction(id: string) {
+  return request<Transaction>(`/transactions/${id}/reverse`, {
+    method: "POST",
+  });
 }
 
 export interface TransferResponse {
@@ -168,9 +247,11 @@ export function cancelRecurringTransfer(id: string) {
     method: "DELETE",
   });
 }
+
 export function getAnalytics(accountId: string) {
   return request<Record<string, number>>(`/analytics/${accountId}`);
 }
+
 export async function exportStatement(accountId: string) {
   const token = getToken();
   const res = await fetch(`${API_BASE_URL}/transactions/${accountId}/export`, {

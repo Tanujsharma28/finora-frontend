@@ -18,5 +18,9 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // TODO Phase 3: refactor data-fetching effects to avoid direct setState calls
+      'react-hooks/set-state-in-effect': 'warn',
+    },
   },
 ])

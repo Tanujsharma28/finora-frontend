@@ -4,7 +4,7 @@ import {
   getAccountsByUser,
   getTransactions,
   getSession,
-  clearSession,
+  logout,
   createAccount,
   createTransaction,
   createTransfer,
@@ -111,18 +111,16 @@ function NewTransactionModal({
             <button
               type="button"
               onClick={() => setTxnType("DEBIT")}
-              className={`flex-1 text-sm font-medium rounded-md py-2 border transition-colors ${
-                txnType === "DEBIT" ? "border-rust bg-rust/8 text-rust" : "border-ink/10 text-ink/45"
-              }`}
+              className={`flex-1 text-sm font-medium rounded-md py-2 border transition-colors ${txnType === "DEBIT" ? "border-rust bg-rust/8 text-rust" : "border-ink/10 text-ink/45"
+                }`}
             >
               Debit
             </button>
             <button
               type="button"
               onClick={() => setTxnType("CREDIT")}
-              className={`flex-1 text-sm font-medium rounded-md py-2 border transition-colors ${
-                txnType === "CREDIT" ? "border-ledger bg-ledger/8 text-ledger" : "border-ink/10 text-ink/45"
-              }`}
+              className={`flex-1 text-sm font-medium rounded-md py-2 border transition-colors ${txnType === "CREDIT" ? "border-ledger bg-ledger/8 text-ledger" : "border-ink/10 text-ink/45"
+                }`}
             >
               Credit
             </button>
@@ -406,9 +404,8 @@ function NewRecurringTransferModal({
                   key={f}
                   type="button"
                   onClick={() => setFrequency(f)}
-                  className={`flex-1 text-xs font-medium rounded-md py-2 border transition-colors ${
-                    frequency === f ? "border-ledger bg-ledger/8 text-ledger" : "border-ink/10 text-ink/45"
-                  }`}
+                  className={`flex-1 text-xs font-medium rounded-md py-2 border transition-colors ${frequency === f ? "border-ledger bg-ledger/8 text-ledger" : "border-ink/10 text-ink/45"
+                    }`}
                 >
                   {f.charAt(0) + f.slice(1).toLowerCase()}
                 </button>
@@ -723,11 +720,10 @@ function Dashboard({ userId, userName, onLogout }: { userId: string; userName: s
                   <button
                     key={a.id}
                     onClick={() => setSelectedId(a.id)}
-                    className={`text-xs font-medium px-3.5 py-2 rounded-md border whitespace-nowrap transition-all ${
-                      a.id === selectedId
+                    className={`text-xs font-medium px-3.5 py-2 rounded-md border whitespace-nowrap transition-all ${a.id === selectedId
                         ? "border-ledger bg-ledger/8 text-ledger"
                         : "border-ink/10 text-ink/45 hover:text-ink hover:border-ink/20"
-                    }`}
+                      }`}
                   >
                     {accountLabel(a.accountType)} · {a.accountNumber.slice(-4)}
                   </button>
@@ -740,7 +736,7 @@ function Dashboard({ userId, userName, onLogout }: { userId: string; userName: s
                 >
                   {view === "activity" ? "Analytics" : "Activity"}
                 </button>
-                
+
                 <button
                   onClick={() => setShowTransferModal(true)}
                   className="text-xs font-medium text-ink/60 border border-ink/10 rounded-md px-3.5 py-2 whitespace-nowrap hover:border-ink/20 transition-colors"
@@ -778,6 +774,14 @@ function Dashboard({ userId, userName, onLogout }: { userId: string; userName: s
                     <span className="w-1.5 h-1.5 rounded-full bg-rust" />
                     {flaggedCount} flagged
                   </span>
+                )}
+                {selectedId && (
+                  <button
+                    onClick={() => exportStatement(selectedId)}
+                    className="text-xs font-medium text-ink/50 border border-ink/10 rounded-md px-3 py-1.5 hover:border-ink/20 transition-colors"
+                  >
+                    Export CSV
+                  </button>
                 )}
               </div>
             </div>
@@ -817,10 +821,10 @@ function Dashboard({ userId, userName, onLogout }: { userId: string; userName: s
                               {txn.merchant
                                 ? txn.merchant
                                 : txn.category === "TRANSFER_IN"
-                                ? "Transfer received"
-                                : txn.category === "REVERSAL"
-                                ? "Reversal"
-                                : txn.category}
+                                  ? "Transfer received"
+                                  : txn.category === "REVERSAL"
+                                    ? "Reversal"
+                                    : txn.category}
                             </p>
                             <span className={`inline-block text-[11px] font-mono mt-1 px-1.5 py-0.5 rounded ${statusStyle(txn.status)}`}>
                               {txn.status}
@@ -839,7 +843,7 @@ function Dashboard({ userId, userName, onLogout }: { userId: string; userName: s
                                     await reverseTransaction(txn.id);
                                     await handleTransactionCreated();
                                     pushToast("Transaction reversed", "info");
-                                  } catch (err) {
+                                  } catch {
                                     pushToast("Reversal failed — please try again", "flagged");
                                   } finally {
                                     setReversingId(null);
@@ -899,8 +903,8 @@ function Dashboard({ userId, userName, onLogout }: { userId: string; userName: s
 function App() {
   const [session, setSessionState] = useState(getSession());
 
-  function handleLogout() {
-    clearSession();
+  async function handleLogout() {
+    await logout();
     setSessionState(null);
   }
 

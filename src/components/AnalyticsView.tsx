@@ -84,7 +84,7 @@ export function AnalyticsView({ accountId }: { accountId: string }) {
               tickFormatter={(v) => `₹${v}`}
             />
             <Tooltip
-              formatter={(value: any) => formatAmount(Number(value || 0))}
+              formatter={(value: unknown) => formatAmount(Number(value || 0))}
               contentStyle={{
                 borderRadius: 8,
                 border: "1px solid #14213D14",
@@ -114,7 +114,7 @@ export function AnalyticsView({ accountId }: { accountId: string }) {
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip formatter={(value: any) => formatAmount(Number(value || 0))} />
+              <Tooltip formatter={(value: unknown) => formatAmount(Number(value || 0))} />
             </PieChart>
           </ResponsiveContainer>
           <div className="flex flex-col gap-2.5 flex-1">
